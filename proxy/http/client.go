@@ -48,7 +48,7 @@ var (
 func NewClient(ctx context.Context, config *ClientConfig) (*Client, error) {
 	serverList := protocol.NewServerList()
 	for _, rec := range config.Server {
-		s, err := protocol.NewServerSpecFromPB(*rec)
+		s, err := protocol.NewServerSpecFromPB(rec)
 		if err != nil {
 			return nil, newError("failed to get server spec").Base(err)
 		}
@@ -210,9 +210,10 @@ func setUpHTTPTunnel(ctx context.Context, dest net.Destination, target string, u
 	}
 
 	cachedH2Mutex.Lock()
-	defer cachedH2Mutex.Unlock()
+	cachedConn, cachedConnFound := cachedH2Conns[dest]
+	cachedH2Mutex.Unlock()
 
-	if cachedConn, found := cachedH2Conns[dest]; found {
+	if cachedConnFound {
 		rc, cc := cachedConn.rawConn, cachedConn.h2Conn
 		if cc.CanTakeNewRequest() {
 			proxyConn, err := connectHTTP2(rc, cc)
@@ -260,6 +261,7 @@ func setUpHTTPTunnel(ctx context.Context, dest net.Destination, target string, u
 			return nil, err
 		}
 
+		cachedH2Mutex.Lock()
 		if cachedH2Conns == nil {
 			cachedH2Conns = make(map[net.Destination]h2Conn)
 		}
@@ -268,6 +270,7 @@ func setUpHTTPTunnel(ctx context.Context, dest net.Destination, target string, u
 			rawConn: rawConn,
 			h2Conn:  h2clientConn,
 		}
+		cachedH2Mutex.Unlock()
 
 		return proxyConn, err
 	default:

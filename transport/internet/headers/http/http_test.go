@@ -34,7 +34,6 @@ func TestReaderWriter(t *testing.T) {
 		t.Error("unknown error ", err)
 	}
 	_ = buffer
-	return
 	/*
 		if buffer.String() != "efg" {
 			t.Error("buffer: ", buffer.String())
@@ -42,7 +41,7 @@ func TestReaderWriter(t *testing.T) {
 }
 
 func TestRequestHeader(t *testing.T) {
-	auth, err := NewHttpAuthenticator(context.Background(), &Config{
+	auth, err := NewAuthenticator(context.Background(), &Config{
 		Request: &RequestConfig{
 			Uri: []string{"/"},
 			Header: []*Header{
@@ -67,7 +66,7 @@ func TestRequestHeader(t *testing.T) {
 func TestLongRequestHeader(t *testing.T) {
 	payload := make([]byte, buf.Size+2)
 	common.Must2(rand.Read(payload[:buf.Size-2]))
-	copy(payload[buf.Size-2:], []byte(ENDING))
+	copy(payload[buf.Size-2:], ENDING)
 	payload = append(payload, []byte("abcd")...)
 
 	reader := HeaderReader{}
@@ -85,7 +84,7 @@ func TestLongRequestHeader(t *testing.T) {
 }
 
 func TestConnection(t *testing.T) {
-	auth, err := NewHttpAuthenticator(context.Background(), &Config{
+	auth, err := NewAuthenticator(context.Background(), &Config{
 		Request: &RequestConfig{
 			Method: &Method{Value: "Post"},
 			Uri:    []string{"/testpath"},
@@ -158,7 +157,7 @@ func TestConnection(t *testing.T) {
 }
 
 func TestConnectionInvPath(t *testing.T) {
-	auth, err := NewHttpAuthenticator(context.Background(), &Config{
+	auth, err := NewAuthenticator(context.Background(), &Config{
 		Request: &RequestConfig{
 			Method: &Method{Value: "Post"},
 			Uri:    []string{"/testpath"},
@@ -185,7 +184,7 @@ func TestConnectionInvPath(t *testing.T) {
 	})
 	common.Must(err)
 
-	authR, err := NewHttpAuthenticator(context.Background(), &Config{
+	authR, err := NewAuthenticator(context.Background(), &Config{
 		Request: &RequestConfig{
 			Method: &Method{Value: "Post"},
 			Uri:    []string{"/testpathErr"},
@@ -256,11 +255,10 @@ func TestConnectionInvPath(t *testing.T) {
 			break
 		}
 	}
-	return
 }
 
 func TestConnectionInvReq(t *testing.T) {
-	auth, err := NewHttpAuthenticator(context.Background(), &Config{
+	auth, err := NewAuthenticator(context.Background(), &Config{
 		Request: &RequestConfig{
 			Method: &Method{Value: "Post"},
 			Uri:    []string{"/testpath"},
@@ -315,5 +313,4 @@ func TestConnectionInvReq(t *testing.T) {
 	if !strings.HasPrefix(string(l), "HTTP/1.1 400 Bad Request") {
 		t.Error("Resp to non http conn", string(l))
 	}
-	return
 }

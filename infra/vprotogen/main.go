@@ -1,38 +1,45 @@
 package main
 
 import (
-	"bytes"
-	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 
+	"v2ray.com/core"
 	"v2ray.com/core/common"
 )
 
-var protocMap = map[string]string{
-	"windows": filepath.Join(os.Getenv("GOPATH"), "src", "v2ray.com", "core", ".dev", "protoc", "windows", "protoc.exe"),
-	"darwin":  filepath.Join(os.Getenv("GOPATH"), "src", "v2ray.com", "core", ".dev", "protoc", "macos", "protoc"),
-	"linux":   filepath.Join(os.Getenv("GOPATH"), "src", "v2ray.com", "core", ".dev", "protoc", "linux", "protoc"),
-}
-
-var (
-	repo = flag.String("repo", "", "Repo for protobuf generation, such as v2ray.com/core")
-)
-
 func main() {
-	flag.Parse()
+	pwd, wdErr := os.Getwd()
+	if wdErr != nil {
+		fmt.Println("Can not get current working directory.")
+		os.Exit(1)
+	}
 
-	protofiles := make(map[string][]string)
-	protoc := protocMap[runtime.GOOS]
-	gosrc := filepath.Join(os.Getenv("GOPATH"), "src")
-	reporoot := filepath.Join(os.Getenv("GOPATH"), "src", *repo)
+	GOBIN := common.GetGOBIN()
+	binPath := os.Getenv("PATH")
+	pathSlice := []string{binPath, GOBIN, pwd}
+	binPath = strings.Join(pathSlice, string(os.PathListSeparator))
+	os.Setenv("PATH", binPath)
 
-	filepath.Walk(reporoot, func(path string, info os.FileInfo, err error) error {
+	EXE := ""
+	if runtime.GOOS == "windows" {
+		EXE = ".exe"
+	}
+	protoc := "protoc" + EXE
+
+	if path, err := exec.LookPath(protoc); err != nil {
+		fmt.Println("Make sure that you have `" + protoc + "` in your system path or current path. To download it, please visit https://github.com/protocolbuffers/protobuf/releases")
+		os.Exit(1)
+	} else {
+		protoc = path
+	}
+
+	protoFilesMap := make(map[string][]string)
+	walkErr := filepath.Walk("./", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Println(err)
 			return err
@@ -45,51 +52,35 @@ func main() {
 		dir := filepath.Dir(path)
 		filename := filepath.Base(path)
 		if strings.HasSuffix(filename, ".proto") {
-			protofiles[dir] = append(protofiles[dir], path)
+			protoFilesMap[dir] = append(protoFilesMap[dir], path)
 		}
 
 		return nil
 	})
-
-	for _, files := range protofiles {
-		args := []string{"--proto_path", gosrc, "--go_out", "plugins=grpc:" + gosrc}
-		args = append(args, files...)
-		cmd := exec.Command(protoc, args...)
-		cmd.Env = append(cmd.Env, os.Environ()...)
-		output, err := cmd.CombinedOutput()
-		if len(output) > 0 {
-			fmt.Println(string(output))
-		}
-		if err != nil {
-			fmt.Println(err)
-		}
+	if walkErr != nil {
+		fmt.Println(walkErr)
+		os.Exit(1)
 	}
 
-	common.Must(filepath.Walk(reporoot, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			fmt.Println(err)
-			return err
+	for _, files := range protoFilesMap {
+		for _, relProtoFile := range files {
+			var args []string
+			if core.ProtoFilesUsingProtocGenGoFast[relProtoFile] {
+				args = []string{"--gofast_out", pwd, "--gofast_opt", "paths=source_relative", "--plugin", "protoc-gen-gofast=" + GOBIN + "/protoc-gen-gofast" + EXE}
+			} else {
+				args = []string{"--go_out", pwd, "--go_opt", "paths=source_relative", "--go-grpc_out", pwd, "--go-grpc_opt", "paths=source_relative", "--plugin", "protoc-gen-go=" + GOBIN + "/protoc-gen-go" + EXE, "--plugin", "protoc-gen-go-grpc=" + GOBIN + "/protoc-gen-go-grpc" + EXE}
+			}
+			args = append(args, relProtoFile)
+			cmd := exec.Command(protoc, args...)
+			cmd.Env = append(cmd.Env, os.Environ()...)
+			output, cmdErr := cmd.CombinedOutput()
+			if len(output) > 0 {
+				fmt.Println(string(output))
+			}
+			if cmdErr != nil {
+				fmt.Println(cmdErr)
+				os.Exit(1)
+			}
 		}
-
-		if info.IsDir() {
-			return nil
-		}
-
-		if !strings.HasSuffix(info.Name(), ".pb.go") {
-			return nil
-		}
-
-		content, err := ioutil.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		content = bytes.Replace(content, []byte("\"golang.org/x/net/context\""), []byte("\"context\""), 1)
-
-		pos := bytes.Index(content, []byte("\npackage"))
-		if pos > 0 {
-			content = content[pos+1:]
-		}
-
-		return ioutil.WriteFile(path, content, info.Mode())
-	}))
+	}
 }
